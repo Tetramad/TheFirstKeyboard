@@ -18,8 +18,8 @@ uint8_t keymap[COLUMN_COUNT][ROW_COUNT] = {
     { KEY_F3, KEY_3, KEY_E, KEY_D, KEY_C },
     { KEY_F4, KEY_4, KEY_R, KEY_F, KEY_V },
     { KEY_F5, KEY_5, KEY_T, KEY_G, KEY_B },
-    { KEY_F6, KEY_6, KEY_LEFTCTRL, KEY_SPACE, KEY_APOSTROPHE },
-    { KEY_F7, KEY_7, KEY_RIGHTCTRL, KEY_RIGHTBRACE, KEY_LEFTBRACE },
+    { KEY_F6, KEY_6, KEY_SPACE, KEY_APOSTROPHE, KEY_LEFTCTRL },
+    { KEY_F7, KEY_7, KEY_RIGHTBRACE, KEY_LEFTBRACE, KEY_RIGHTCTRL },
     { KEY_F8, KEY_8, KEY_Y, KEY_H, KEY_N },
     { KEY_F9, KEY_9, KEY_U, KEY_J, KEY_M },
     { KEY_F10, KEY_0, KEY_I, KEY_K, KEY_COMMA },
@@ -27,8 +27,10 @@ uint8_t keymap[COLUMN_COUNT][ROW_COUNT] = {
     { KEY_F12, KEY_EQUAL, KEY_P, KEY_SEMICOLON, KEY_SLASH },
     { KEY_RIGHTMETA, KEY_ESC, KEY_BACKSLASH, KEY_ENTER, KEY_RIGHTSHIFT },
 };
-uint8_t report_buffer[1 + (((164 + 4) + 7) / 8)] = { 0, };
-bool changed = true;
+
+volatile bool usb_ep_data_ready = false;
+static_assert((164 + 4) % 8 == 0);
+volatile uint8_t usb_ep_data_buffer[1 + ((164 + 4) / 8)] = { 0, };
 
 void usb_init(void) {
     UHWCON |= _BV(UVREGE); /* Power-On USB pads regulator */
@@ -43,32 +45,17 @@ void usb_init(void) {
     UDIEN |= _BV(EORSTE) | _BV(SOFE); /* Enable End of Reset, Start of Frame interrupts */
 }
 
-void keymatrix_init(void) {
+void matrix_init(void) {
     /*
     ** Key Matrix Configuration
     **
-    ** Column
-    ** 1 PF7
-    ** 2 PF6
-    ** 3 PF5
-    ** 4 PF4
-    ** 5 PF1
-    ** 6 PF0
-    ** 7 PB0
-    ** 8 PB1
-    ** 9 PB2
-    ** 10 PB3
-    ** 11 PB4
-    ** 12 PB5
-    ** 13 PB6
-    ** 14 PB7
+    ** Column (output)
+    ** 1   2   3   4   5   6   7   8   9   10  11  12  13  14
+    ** PF7 PF6 PF5 PF4 PF1 PF0 PB0 PB1 PB2 PB3 PB4 PB5 PB6 PB7
     **
-    ** Row
-    ** 1 PD0
-    ** 2 PD1
-    ** 3 PD2
-    ** 4 PD3
-    ** 5 PD4
+    ** Row (input)
+    ** 1   2   3   4   5
+    ** PD0 PD1 PD2 PD3 PD4
     */
 
     DDRF = 0b11110011;
@@ -76,153 +63,98 @@ void keymatrix_init(void) {
     DDRD = 0b00000000;
 }
 
+volatile uint8_t * const matrix_col_port[COLUMN_COUNT] = {
+    [0] = &PORTF,
+    [1] = &PORTF,
+    [2] = &PORTF,
+    [3] = &PORTF,
+    [4] = &PORTF,
+    [5] = &PORTF,
+    [6] = &PORTB,
+    [7] = &PORTB,
+    [8] = &PORTB,
+    [9] = &PORTB,
+    [10] = &PORTB,
+    [11] = &PORTB,
+    [12] = &PORTB,
+    [13] = &PORTB,
+};
+
+const uint8_t matrix_col_pin[COLUMN_COUNT] = {
+    [0] = PORTF7,
+    [1] = PORTF6,
+    [2] = PORTF5,
+    [3] = PORTF4,
+    [4] = PORTF1,
+    [5] = PORTF0,
+    [6] = PORTB0,
+    [7] = PORTB1,
+    [8] = PORTB2,
+    [9] = PORTB3,
+    [10] = PORTB4,
+    [11] = PORTB5,
+    [12] = PORTB6,
+    [13] = PORTB7,
+};
+
+bool is_mod_key(uint8_t keycode) {
+    return keycode >= 0xE0 && keycode <= 0xE7;
+}
+
+bool is_pressed(const uint8_t row_array[], uint8_t i, uint8_t j) {
+    return row_array[i] & (1 << j);
+}
+
 int main(void) {
     LED_PROVE_INIT;
+    matrix_init();
     usb_init();
-    keymatrix_init();
 
     sei();
 
     for (;;) {
-        PORTF |= _BV(PORTF7);
-        _NOP();
-        _NOP();
-        buffer[0] = PIND;
-        PORTF = 0x00;
-        _NOP();
-        _NOP();
+        for (uint8_t i = 0; i < COLUMN_COUNT; ++i) {
+            *matrix_col_port[i] = _BV(matrix_col_pin[i]);
+            _NOP();
+            _NOP();
+            buffer[i] = PIND;
+            *matrix_col_port[i] = 0x00;
+            _NOP();
+            _NOP();
+        }
 
-        PORTF |= _BV(PORTF6);
-        _NOP();
-        _NOP();
-        buffer[1] = PIND;
-        PORTF = 0x00;
-        _NOP();
-        _NOP();
+        uint8_t tmp_ep_data_buffer[sizeof(usb_ep_data_buffer)] = { 0x00, };
 
-        PORTF |= _BV(PORTF5);
-        _NOP();
-        _NOP();
-        buffer[2] = PIND;
-        PORTF = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTF |= _BV(PORTF4);
-        _NOP();
-        _NOP();
-        buffer[3] = PIND;
-        PORTF = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTF |= _BV(PORTF1);
-        _NOP();
-        _NOP();
-        buffer[4] = PIND;
-        PORTF = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTF |= _BV(PORTF0);
-        _NOP();
-        _NOP();
-        buffer[5] = PIND;
-        PORTF = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTB |= _BV(PORTB0);
-        _NOP();
-        _NOP();
-        buffer[6] = PIND;
-        PORTB = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTB |= _BV(PORTB1);
-        _NOP();
-        _NOP();
-        buffer[7] = PIND;
-        PORTB = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTB |= _BV(PORTB2);
-        _NOP();
-        _NOP();
-        buffer[8] = PIND;
-        PORTB = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTB |= _BV(PORTB3);
-        _NOP();
-        _NOP();
-        buffer[9] = PIND;
-        PORTB = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTB |= _BV(PORTB4);
-        _NOP();
-        _NOP();
-        buffer[10] = PIND;
-        PORTB = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTB |= _BV(PORTB5);
-        _NOP();
-        _NOP();
-        buffer[11] = PIND;
-        PORTB = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTB |= _BV(PORTB6);
-        _NOP();
-        _NOP();
-        buffer[12] = PIND;
-        PORTB = 0x00;
-        _NOP();
-        _NOP();
-
-        PORTB |= _BV(PORTB7);
-        _NOP();
-        _NOP();
-        buffer[13] = PIND;
-        PORTB = 0x00;
-        _NOP();
-        _NOP();
-
-#define IS_MOD_KEY(keycode) ((keycode) >= 0xE0 && (keycode) <= 0xE7)
-#define KEYCODE_TO_MODFLAG(keycode) (1 << ((keycode) & 0x07))
-#define ACTIVE_KEY(keycode) do { if (IS_MOD_KEY(keycode)) { report_buffer[0] |= KEYCODE_TO_MODFLAG(keycode); } else { report_buffer[(keycode / 8) + 1] |= 1 << (keycode % 8); } } while (false)
-#define DEACTIVE_KEY(keycode) do { if (IS_MOD_KEY(keycode)) { report_buffer[0] &= ~KEYCODE_TO_MODFLAG(keycode); } else { report_buffer[(keycode / 8) + 1] &= ~(1 << (keycode % 8)); } } while (false)
-
-        bool tmp_changed = false;
         for (uint8_t i = 0; i < COLUMN_COUNT; ++i) {
             for (uint8_t j = 0; j < ROW_COUNT; ++j) {
-                if (IS_MOD_KEY(keymap[i][j])) {
-                    if ((report_buffer[0] ^ ((!!(buffer[i] & (1 << j))) << (keymap[i][j] & 0x07))) & (1 << (keymap[i][j] & 0x07))) {
-                        tmp_changed = true;
+                if (is_mod_key(keymap[i][j])) {
+                    if (is_pressed(buffer, i, j)) {
+                        tmp_ep_data_buffer[0] |= _BV(keymap[i][j] & 0x07);
+                    } else {
+                        tmp_ep_data_buffer[0] &= ~_BV(keymap[i][j] & 0x07);
                     }
                 } else {
-                    if ((report_buffer[1 + (keymap[i][j] / 8)] ^ ((!!(buffer[i] & (1 << j))) << (keymap[i][j] % 8))) & (1 << (keymap[i][j] % 8))) {
-                        tmp_changed = true;
+                    if (is_pressed(buffer, i, j)) {
+                        tmp_ep_data_buffer[1 + (keymap[i][j] / 8)] |= _BV(keymap[i][j] % 8);
+                    } else {
+                        tmp_ep_data_buffer[1 + (keymap[i][j] / 8)] &= ~_BV(keymap[i][j] % 8);
                     }
                 }
-
-                if (buffer[i] & (1 << j)) {
-                    ACTIVE_KEY(keymap[i][j]);
-                } else {
-                    DEACTIVE_KEY(keymap[i][j]);
-                }
-
-                changed = tmp_changed;
             }
         }
+
+        if (!usb_ep_data_ready) {
+            for (uint8_t i = 0; i < sizeof(usb_ep_data_buffer); ++i) {
+                if (tmp_ep_data_buffer[i] != usb_ep_data_buffer[i]) {
+                    for (uint8_t j = 0; j < sizeof(usb_ep_data_buffer); ++j) {
+                        usb_ep_data_buffer[j] = tmp_ep_data_buffer[j];
+                    }
+                    usb_ep_data_ready = true;
+                    break;
+                }
+            }
+        }
+
         _delay_ms(1.0);
     }
 }

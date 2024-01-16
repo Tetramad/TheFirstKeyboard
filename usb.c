@@ -7,8 +7,8 @@
 #include "utility.h"
 
 uint8_t usb_configuration_value = 0x00;
-extern uint8_t report_buffer[22];
-extern bool changed;
+extern volatile uint8_t usb_ep_data_buffer[1 + ((164 + 4) / 8)];
+extern volatile bool usb_ep_data_ready;
 
 ISR(USB_GEN_vect, ISR_BLOCK) {
     if (bit_is_set(UDINT, EORSTI)) {
@@ -43,14 +43,14 @@ ISR(USB_GEN_vect, ISR_BLOCK) {
         if (usb_configuration_value) {
             /* TODO: implement Start Of Frame behavior */
             UENUM = 1;
-            if (changed && bit_is_set(UEINTX, TXINI)) {
+            if (usb_ep_data_ready && bit_is_set(UEINTX, TXINI)) {
                 EP_IN_ACK;
-                changed = false;
                 if (bit_is_set(UEINTX, RWAL)) {
-                    for (uint8_t i = 0; i < sizeof(report_buffer); ++i) {
-                        UEDATX = report_buffer[i];
+                    for (uint8_t i = 0; i < sizeof(usb_ep_data_buffer); ++i) {
+                        UEDATX = usb_ep_data_buffer[i];
                     }
                 }
+                usb_ep_data_ready = false;
                 UEINTX &= ~_BV(FIFOCON);
             }
         }
