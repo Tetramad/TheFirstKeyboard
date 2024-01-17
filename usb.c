@@ -7,7 +7,7 @@
 #include "utility.h"
 
 uint8_t usb_configuration_value = 0x00;
-extern volatile uint8_t usb_ep_data_buffer[1 + ((164 + 4) / 8)];
+extern volatile uint8_t usb_ep_data_buffer[1 + ((165 + 3) / 8)];
 extern volatile bool usb_ep_data_ready;
 
 ISR(USB_GEN_vect, ISR_BLOCK) {

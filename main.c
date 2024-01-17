@@ -29,8 +29,8 @@ uint8_t keymap[COLUMN_COUNT][ROW_COUNT] = {
 };
 
 volatile bool usb_ep_data_ready = false;
-static_assert((164 + 4) % 8 == 0);
-volatile uint8_t usb_ep_data_buffer[1 + ((164 + 4) / 8)] = { 0, };
+static_assert((165 + 3) % 8 == 0);
+volatile uint8_t usb_ep_data_buffer[1 + ((165 + 3) / 8)] = { 0, };
 
 void usb_init(void) {
     UHWCON |= _BV(UVREGE); /* Power-On USB pads regulator */
